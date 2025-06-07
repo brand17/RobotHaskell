@@ -46,15 +46,63 @@ sensors = do
   threadDelay 5000000
   sensors
 
-data Vars = Vars {time :: UTCTime, pos :: Float, speed :: Float, acc :: Float}
+data Var = Var {x :: Double, x' :: Double, x'' :: Double}
 
-model :: Vars -> IO ()
-model v = do
-  t <- getCurrentTime
+newVar :: Var -> NominalDiffTime -> Var
+newVar v t =
+  let dt = realToFrac t
+   in Var (x v + x' v + 0.5 * x'' v * dt * dt) (x' v + x'' v * dt) (x'' v)
+
+r1 :: Vector R
+r1 = vector [0, 0, 0]
+
+l1 :: Double
+l1 = 1
+
+l2 :: Double
+l2 = 2 * sqrt 2
+
+z2 :: Vector R
+z2 = vector [0, 0, 1]
+
+m1 :: Double
+m1 = 3
+
+m2 :: Double
+m2 = 4
+
+i1 :: Matrix Double
+i1 = scalar (m1 * l1 ** 2 / 12) * ident 3
+
+i2 :: Matrix Double
+i2 = scalar (m2 * l2 ** 2 / 12) * ident 3
+
+_W1 :: Vector R
+_W1 = vector [0, 9.8 * m1, 1]
+
+_W2 :: Vector R
+_W2 = vector [0, 9.8 * m2, 1]
+
+tExt :: Vector R
+tExt = vector [0, 0, 0]
+
+_Q2 :: Double
+_Q2 = 0
+
+updateVars :: [Var] -> NominalDiffTime -> [Var]
+updateVars v t =
+  let v1 = [newVar a t | a <- v]
+      c1 = r1 + scalar l1 * vector [sin $ x $ head v1, cos $ x $ head v1, 0]
+      m = fromBlocks [[ident 5, 7, row [10, 20]], [3, diagl [1, 2, 3], 0]]
+   in []
+
+model :: [Var] -> UTCTime -> IO ()
+model v t0 = do
   putStrLn "Model"
-  let a = fromBlocks [[ident 5, 7, row [10, 20]], [3, diagl [1, 2, 3], 0]]
+  t <- getCurrentTime
+  let v1 = updateVars v $ diffUTCTime t t0
   threadDelay 1000000
-  model v
+  model v1 t
 
 main :: IO ()
 main = do
@@ -67,7 +115,7 @@ main = do
   -- _ <- getLine
   -- main
   t <- getCurrentTime
-  let v = Vars t 0 0 0
-  model v
+  let v = [Var 0 0 0, Var 0 0 0]
+  model v t
 
 -- return ()
