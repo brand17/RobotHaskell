@@ -1,2 +1,5 @@
 packages: .
           C:/Users/brand17/Downloads/hmatrix-master/packages/base
+
+package hmatrix
+  flags: +openblas

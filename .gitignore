@@ -1,2 +1,4 @@
 dist-newstyle/*
 *.xls*
+.vscode/phoityne.log
+.vscode/dist-cabal-repl/cache/config
