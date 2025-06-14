@@ -82,16 +82,16 @@ m2 :: R
 m2 = 4
 
 i1 :: Matrix R
-i1 = scalar (m1 * l1 ** 2 / 12) * ident 3
+i1 = scalar (m1 * l1 ** 2 / 12) * diagl [1, 1, 0]
 
 i2 :: Matrix R
-i2 = scalar (m2 * l2 ** 2 / 12) * ident 3
+i2 = scalar (m2 * l2 ** 2 / 12) * diagl [1, 1, 0]
 
 _W1 :: Vector R
-_W1 = vector [0, 9.8 * m1, 1]
+_W1 = vector [0, 9.8 * m1, 0]
 
 _W2 :: Vector R
-_W2 = vector [0, 9.8 * m2, 1]
+_W2 = vector [0, 9.8 * m2, 0]
 
 tExt :: Vector R
 tExt = vector [0, 0, 0]
