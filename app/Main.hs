@@ -9,6 +9,7 @@ import Control.Concurrent
 
 import Data.Maybe (fromMaybe)
 import Data.Time.Clock
+import Debug.Trace (traceShowId)
 import Numeric.LinearAlgebra (cross, linearSolve, (#>))
 import Numeric.LinearAlgebra.Data
 
@@ -126,8 +127,8 @@ updateVars v t =
               fromBlocks
                 [ [m1mat, 0, cpMatrix $ scalar (-m1) * c1, 0],
                   [m2mat, m2mat, cpMatrix $ scalar (-m2) * c2, cpMatrix $ scalar (-m2) * c2],
-                  [0, 0, ident 3, 0],
-                  [0, 0, ident 3, ident 3]
+                  [0, 0, i1, 0],
+                  [0, 0, i2, i2]
                 ],
               fromBlocks
                 [ [-ident 3, 0, 0, 0],
@@ -137,10 +138,13 @@ updateVars v t =
                 ]
             ],
             [ 0,
-              0,
               fromBlocks
-                [ [ident 3, ident 3, 0, 0],
-                  [0, 0, ident 3, ident 3]
+                [ [ident 3, konst 0 (3, 9)],
+                  [konst 0 (3, 3), 0]
+                ],
+              fromBlocks
+                [ [konst 0 (3, 6), 0, 0],
+                  [0, ident 3, ident 3]
                 ]
             ],
             [ 0,
@@ -162,10 +166,10 @@ updateVars v t =
             konst 0 3,
             0
           ]
-      b = fromMaybe 0 (linearSolve m $ fromColumns [a]) ! 0
+      b = head $ toColumns $ fromMaybe (error "wrong matrix") (linearSolve m $ fromColumns [a])
       alpha1 = b `atIndex` 9
       alpha2 = b `atIndex` 12 + alpha1
-   in [updateAcc v a | v <- v_new, a <- [alpha1, alpha2]]
+   in [updateAcc v a | (v, a) <- zip v_new [alpha1, alpha2]]
 
 model :: [Var] -> UTCTime -> IO ()
 model v t0 = do
@@ -179,17 +183,11 @@ model v t0 = do
 main :: IO ()
 main = do
   -- let m = fromBlocks [[ident 2, 1], [matrix 1 [1 .. 3], matrix 4 [1 .. 12]]] :: Matrix R
-  -- -- let m = fromColumns [matrix 5 [1 .. 15] ! 0]
-  -- print $ dispf 2 m
+  -- let m = traceShowId $ head (toColumns $ matrix 1 [1 .. 15])
+  -- print m
 
-  -- putStrLn "press Enter to exit the program"
   threadId <- forkIO $ do
     sensors
-  -- putStrLn "Something"
-  -- threadDelay 5000000 -- wait 5 seconds
-  -- putStrLn "Something Else"
-  -- _ <- getLine
-  -- main
   t <- getCurrentTime
   let v = [Var 0 0 0, Var 0.1 0 0]
   model v t
