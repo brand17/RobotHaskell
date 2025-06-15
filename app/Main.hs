@@ -9,10 +9,11 @@ import Control.Concurrent
 -- import Control.Monad.State
 
 import Data.Maybe (fromMaybe)
-import Data.Time.Clock
+-- import Data.Time.Clock
 import Debug.Trace (traceShowId)
 import Numeric.LinearAlgebra (cross, linearSolve, (#>))
 import Numeric.LinearAlgebra.Data
+import System.Clock
 import Text.Printf
 
 -- import System.Random
@@ -54,9 +55,9 @@ sensors = do
 
 data Var = Var {x :: Double, x' :: Double, x'' :: Double}
 
-newVar :: Var -> NominalDiffTime -> Var
+newVar :: Var -> TimeSpec -> Var
 newVar v t =
-  let dt = realToFrac t
+  let dt = realToFrac t / 1000000000
    in Var (x v + (x' v + 0.5 * x'' v * dt) * dt) (x' v + x'' v * dt) (x'' v)
 
 updateAcc :: Var -> Double -> Var
@@ -105,7 +106,7 @@ _Q2 = 0
 cpMatrix :: Vector R -> Matrix R
 cpMatrix v = fromLists [[0, -(v ! 2), v ! 1], [v ! 2, 0, -(v ! 0)], [-(v ! 1), v ! 0, 0]] :: Matrix R
 
-updateVars :: [Var] -> NominalDiffTime -> [Var]
+updateVars :: [Var] -> TimeSpec -> [Var]
 updateVars v t =
   let v_new = [newVar a t | a <- v]
       r2 = scalar l1 * vector [cos $ x $ head v_new, sin $ x $ head v_new, 0]
@@ -174,25 +175,24 @@ updateVars v t =
       alpha2 = b `atIndex` 12 + alpha1
    in [updateAcc v a | (v, a) <- zip v_new [alpha1, alpha2]]
 
-model :: [Var] -> UTCTime -> IO ()
+model :: [Var] -> TimeSpec -> IO ()
 model v t0 = do
   -- putStrLn "Model"
-  t <- getCurrentTime
-  let tt = realToFrac $ diffUTCTime t t0
-  let v1 = updateVars v $ diffUTCTime t t0
+  t <- getTime Monotonic
+  let tt = realToFrac (t - t0) / 1000000000
+  let v1 = updateVars v (t - t0)
   printf "%s,%.7f\n" (show v1) (tt :: Double)
-  threadDelay 1
+  -- threadDelay 1000000
   model v1 t
 
 main :: IO ()
 main = do
-  -- let m = fromBlocks [[ident 2, 1], [matrix 1 [1 .. 3], matrix 4 [1 .. 12]]] :: Matrix R
   -- let m = traceShowId $ head (toColumns $ matrix 1 [1 .. 15])
   -- print m
 
   threadId <- forkIO $ do
     sensors
-  t <- getCurrentTime
+  t <- getTime Monotonic
   let v = [Var (pi / 2 :: R) 0 0, Var ((pi / 2 :: R) + 0.1) 0 0]
   model v t
 
