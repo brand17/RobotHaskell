@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE InstanceSigs #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Main where
@@ -12,6 +13,7 @@ import Data.Time.Clock
 import Debug.Trace (traceShowId)
 import Numeric.LinearAlgebra (cross, linearSolve, (#>))
 import Numeric.LinearAlgebra.Data
+import Text.Printf
 
 -- import System.Random
 
@@ -61,7 +63,8 @@ updateAcc :: Var -> Double -> Var
 updateAcc v = Var (x v) (x' v)
 
 instance Show Var where
-  show v = show [x v, x' v, x'' v]
+  show :: Var -> String
+  show v = printf "%.7f,%.7f,%.7f" (x v) (x' v) (x'' v)
 
 -- r1 :: Vector R
 -- r1 = vector [0, 0, 0]
@@ -105,12 +108,12 @@ cpMatrix v = fromLists [[0, -(v ! 2), v ! 1], [v ! 2, 0, -(v ! 0)], [-(v ! 1), v
 updateVars :: [Var] -> NominalDiffTime -> [Var]
 updateVars v t =
   let v_new = [newVar a t | a <- v]
-      r2 = scalar l1 * vector [sin $ x $ head v_new, cos $ x $ head v_new, 0]
+      r2 = scalar l1 * vector [cos $ x $ head v_new, sin $ x $ head v_new, 0]
       c1 = r2 / 2
-      c2 = scalar l2 * vector [sin $ x $ last v_new, cos $ x $ last v_new, 0] / 2
+      c2 = scalar l2 * vector [cos $ x $ last v_new, sin $ x $ last v_new, 0] / 2
       w1 = vector [0, 0, x' $ head v_new]
       w2 = vector [0, 0, x' $ last v_new]
-      v2 = scalar (l1 * x' (head v_new)) * vector [cos $ x $ head v_new, sin $ x $ head v_new, 0]
+      v2 = scalar (l1 * x' (head v_new)) * vector [-(sin $ x $ head v_new), cos $ x $ head v_new, 0]
       q2' = x' (last v_new) - x' (head v_new)
       m1mat = scalar m1 * ident 3
       m2mat = scalar m2 * ident 3
@@ -175,10 +178,10 @@ model :: [Var] -> UTCTime -> IO ()
 model v t0 = do
   -- putStrLn "Model"
   t <- getCurrentTime
-  -- print (realToFrac $ diffUTCTime t t0)
+  let tt = realToFrac $ diffUTCTime t t0
   let v1 = updateVars v $ diffUTCTime t t0
-  print v1
-  -- threadDelay 1000000
+  printf "%s,%.7f\n" (show v1) (tt :: Double)
+  threadDelay 1
   model v1 t
 
 main :: IO ()
@@ -190,7 +193,7 @@ main = do
   threadId <- forkIO $ do
     sensors
   t <- getCurrentTime
-  let v = [Var 0 0 0, Var 0.1 0 0]
+  let v = [Var (pi / 2 :: R) 0 0, Var ((pi / 2 :: R) + 0.1) 0 0]
   model v t
 
 -- return ()
