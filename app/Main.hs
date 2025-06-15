@@ -55,7 +55,7 @@ data Var = Var {x :: Double, x' :: Double, x'' :: Double}
 newVar :: Var -> NominalDiffTime -> Var
 newVar v t =
   let dt = realToFrac t
-   in Var (x v + x' v + 0.5 * x'' v * dt * dt) (x' v + x'' v * dt) (x'' v)
+   in Var (x v + (x' v + 0.5 * x'' v * dt) * dt) (x' v + x'' v * dt) (x'' v)
 
 updateAcc :: Var -> Double -> Var
 updateAcc v = Var (x v) (x' v)
@@ -88,10 +88,10 @@ i2 :: Matrix R
 i2 = scalar (m2 * l2 ** 2 / 12) * diagl [1, 1, 0]
 
 _W1 :: Vector R
-_W1 = vector [0, 9.8 * m1, 0]
+_W1 = vector [0, -(9.8 * m1), 0]
 
 _W2 :: Vector R
-_W2 = vector [0, 9.8 * m2, 0]
+_W2 = vector [0, -(9.8 * m2), 0]
 
 tExt :: Vector R
 tExt = vector [0, 0, 0]
@@ -175,9 +175,10 @@ model :: [Var] -> UTCTime -> IO ()
 model v t0 = do
   -- putStrLn "Model"
   t <- getCurrentTime
+  -- print (realToFrac $ diffUTCTime t t0)
   let v1 = updateVars v $ diffUTCTime t t0
   print v1
-  threadDelay 1000000
+  -- threadDelay 1000000
   model v1 t
 
 main :: IO ()
