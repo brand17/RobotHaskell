@@ -8,9 +8,11 @@ import Control.Concurrent
 -- import NiceFork
 -- import Control.Monad.State
 
+import Control.Exception (evaluate)
+import Control.Monad
 import Data.Maybe (fromMaybe)
--- import Data.Time.Clock
 import Debug.Trace (traceShowId)
+import Graphics.Gloss.Interface.IO.Animate hiding (Vector)
 import Numeric.LinearAlgebra (cross, linearSolve, (#>))
 import Numeric.LinearAlgebra.Data
 import System.Clock
@@ -47,11 +49,11 @@ import Text.Printf
 -- b :: (Int, Stack)
 -- b = runState stackManip [5, 8, 2, 1]
 
-sensors :: IO b
-sensors = do
-  putStrLn "Sensors"
-  threadDelay 5000000
-  sensors
+-- sensors :: IO b
+-- sensors = do
+--   putStrLn "Sensors"
+--   threadDelay 5000000
+--   sensors
 
 data Var = Var {x :: Double, x' :: Double, x'' :: Double}
 
@@ -175,25 +177,69 @@ updateVars v t =
       alpha2 = b `atIndex` 12 + alpha1
    in [updateAcc v a | (v, a) <- zip v_new [alpha1, alpha2]]
 
-model :: [Var] -> TimeSpec -> IO ()
-model v t0 = do
-  -- putStrLn "Model"
-  t <- getTime Monotonic
-  let tt = realToFrac (t - t0) / 1000000000
-  let v1 = updateVars v (t - t0)
-  printf "%s,%.7f\n" (show v1) (tt :: Double)
-  -- threadDelay 1000000
-  model v1 t
+-- model :: [Var] -> TimeSpec -> IO ()
+-- model v t0 = do
+--   -- putStrLn "Model"
+--   t <- getTime Monotonic
+--   let tt = realToFrac (t - t0) / 1000000000
+--   let v1 = updateVars v (t - t0)
+--   printf "%s,%.7f\n" (show v1) (tt :: Double)
+--   -- threadDelay 1000000
+--   model v1 t
 
 main :: IO ()
 main = do
   -- let m = traceShowId $ head (toColumns $ matrix 1 [1 .. 15])
   -- print m
 
-  threadId <- forkIO $ do
-    sensors
-  t <- getTime Monotonic
-  let v = [Var (pi / 2 :: R) 0 0, Var ((pi / 2 :: R) + 0.1) 0 0]
-  model v t
+  -- threadId <- forkIO $ do
+  --   sensors
+  ref <- newMVar initialState
+  animateIO FullScreen black (\_ -> picture <$> readMVar ref) (control ref)
 
--- return ()
+-- t <- getTime Monotonic
+-- let v = [Var (pi / 2 :: R) 0 0, Var ((pi / 2 :: R) + 0.1) 0 0]
+-- model v t
+
+initialState :: [Var]
+initialState =
+  [ Var (pi / 2) 0 0,
+    Var ((pi / 2) + 0.1) 0 0
+  ]
+
+updateState :: [Var] -> TimeSpec -> [Var]
+updateState v t =
+  [ Var (x (head v) + realToFrac t / 1000000000) 0 0,
+    Var (x (last v) - 2 * realToFrac t / 1000000000) 0 0
+  ]
+
+controlCycle :: MVar [Var] -> Controller -> TimeSpec -> IO ()
+controlCycle ref c t0 = do
+  x <- takeMVar ref
+  t <- getTime Monotonic
+  x' <- evaluate (updateVars x (t - t0))
+  -- putStrLn "state updated"
+  putMVar ref x'
+  controllerSetRedraw c
+  threadDelay 100000
+  controlCycle ref c t
+
+control :: MVar [Var] -> Controller -> IO ()
+control ref c = do
+  t <- getTime Monotonic
+  void . forkIO $ controlCycle ref c t
+
+picture :: [Var] -> Picture
+picture v = do
+  let angles = fmap (realToFrac . x) v
+  let [a1, a2] = angles
+  Scale 100 100 $
+    Rotate (57 * a1 - 90) $
+      Color green $
+        Line
+          [ (0, 0),
+            (0, realToFrac l1),
+            ( realToFrac l2 * sin (a2 - a1),
+              realToFrac l1 + realToFrac l2 * cos (a2 - a1)
+            )
+          ]
