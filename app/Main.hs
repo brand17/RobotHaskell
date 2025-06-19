@@ -221,7 +221,7 @@ controlCycle ref c t0 = do
   -- putStrLn "state updated"
   putMVar ref x'
   controllerSetRedraw c
-  threadDelay 100000
+  threadDelay 1
   controlCycle ref c t
 
 control :: MVar [Var] -> Controller -> IO ()
