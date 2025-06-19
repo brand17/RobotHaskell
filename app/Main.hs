@@ -207,11 +207,11 @@ initialState =
     Var ((pi / 2) + 0.1) 0 0
   ]
 
-updateState :: [Var] -> TimeSpec -> [Var]
-updateState v t =
-  [ Var (x (head v) + realToFrac t / 1000000000) 0 0,
-    Var (x (last v) - 2 * realToFrac t / 1000000000) 0 0
-  ]
+-- updateState :: [Var] -> TimeSpec -> [Var]
+-- updateState v t =
+--   [ Var (x (head v) + realToFrac t / 1000000000) 0 0,
+--     Var (x (last v) - 2 * realToFrac t / 1000000000) 0 0
+--   ]
 
 controlCycle :: MVar [Var] -> Controller -> TimeSpec -> IO ()
 controlCycle ref c t0 = do
@@ -231,10 +231,9 @@ control ref c = do
 
 picture :: [Var] -> Picture
 picture v = do
-  let angles = fmap (realToFrac . x) v
-  let [a1, a2] = angles
+  let [a1, a2] = fmap (realToFrac . x) v
   Scale 100 100 $
-    Rotate (57 * a1 - 90) $
+    Rotate (180 / pi * a1 - 90) $
       Color green $
         Line
           [ (0, 0),
