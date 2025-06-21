@@ -6,7 +6,6 @@ module Main where
 
 import Control.Concurrent
 -- import NiceFork
--- import Control.Monad.State
 
 import Control.Exception (evaluate)
 import Control.Monad
@@ -18,59 +17,47 @@ import Numeric.LinearAlgebra.Data
 import System.Clock
 import Text.Printf
 
--- import System.Random
+accDiff :: Var -> Vector R
+accDiff r =
+  let cx = cos $ x r
+      cy = sin $ x r
+      v =
+        vector
+          [ -(cy * x'' r) - cx * x' r ** 2,
+            cx * x'' r - cy * x' r ** 2
+          ]
+   in v
 
--- type RandomState a = State StdGen a
+rotMat :: R -> Matrix R
+rotMat a =
+  let c = cos a
+      s = sin a
+   in fromLists [[c, -s], [s, c]] :: Matrix R
 
--- getRandom :: (Random a) => RandomState a
--- getRandom =
---   get >>= \gen ->
---     let (val, gen') = random gen
---      in put gen'
---           >> return val
-
--- getTwoRandoms :: (Random a) => RandomState (a, a)
--- getTwoRandoms = liftA2 (,) getRandom getRandom
-
--- type Stack = [Int]
-
--- pop :: State Stack Int
--- pop = state $ \(x : xs) -> (x, xs)
-
--- push :: Int -> State Stack ()
--- push a = state $ \xs -> ((), a : xs)
-
--- stackManip :: State Stack Int
--- stackManip = do
---   push 3
---   _ <- pop
---   pop
-
--- b :: (Int, Stack)
--- b = runState stackManip [5, 8, 2, 1]
-
--- sensors :: IO b
--- sensors = do
---   putStrLn "Sensors"
---   threadDelay 5000000
---   sensors
+sensors :: MVar [Var] -> IO b
+sensors v = do
+  ref <- readMVar v
+  let g = vector [0, -9.8]
+      acc1 = scalar l1 * accDiff (head ref)
+      acc2 = acc1 + scalar l2 * accDiff (last ref)
+      accCM1 = g - scalar 0.5 * acc1
+      accCM2 = g - scalar 0.5 * (acc1 + acc2)
+      accLoc1 = rotMat (-(x $ head ref)) #> accCM1
+      accLoc2 = rotMat (-(x $ last ref)) #> accCM2
+  print (accLoc1, accLoc2)
+  threadDelay 5000000
+  sensors v
 
 data Var = Var {x :: Double, x' :: Double, x'' :: Double}
 
 newVar :: Var -> TimeSpec -> Var
 newVar v t =
   let dt = realToFrac t / 1000000000
-   in Var (x v + (x' v + 0.5 * x'' v * dt) * dt) (x' v + x'' v * dt) (x'' v)
-
-updateAcc :: Var -> Double -> Var
-updateAcc v = Var (x v) (x' v)
+   in v {x = x v + (x' v + 0.5 * x'' v * dt) * dt, x' = x' v + x'' v * dt}
 
 instance Show Var where
   show :: Var -> String
   show v = printf "%.7f,%.7f,%.7f" (x v) (x' v) (x'' v)
-
--- r1 :: Vector R
--- r1 = vector [0, 0, 0]
 
 l1 :: R
 l1 = 1
@@ -175,43 +162,25 @@ updateVars v t =
       b = head $ toColumns $ fromMaybe (error "wrong matrix") (linearSolve m $ fromColumns [a])
       alpha1 = b `atIndex` 9
       alpha2 = b `atIndex` 12 + alpha1
-   in [updateAcc v a | (v, a) <- zip v_new [alpha1, alpha2]]
-
--- model :: [Var] -> TimeSpec -> IO ()
--- model v t0 = do
---   -- putStrLn "Model"
---   t <- getTime Monotonic
---   let tt = realToFrac (t - t0) / 1000000000
---   let v1 = updateVars v (t - t0)
---   printf "%s,%.7f\n" (show v1) (tt :: Double)
---   -- threadDelay 1000000
---   model v1 t
+   in [v {x'' = a} | (v, a) <- zip v_new [alpha1, alpha2]]
 
 main :: IO ()
 main = do
   -- let m = traceShowId $ head (toColumns $ matrix 1 [1 .. 15])
   -- print m
-
-  -- threadId <- forkIO $ do
-  --   sensors
+  -- print $ accDiff $ Var 489.8538573938557 315.9010928869936 (-394.2820661499558)
+  -- a <- newMVar [Var 464.0897101 286.7705198 383.9401173, Var 64.1445146 17.1352783 153.2820900]
+  -- sensors a -- [41126.130616413975,-198.31925023022438],[-46876.664903601355,-67505.96081714175]
   ref <- newMVar initialState
+  _ <- forkIO $ do
+    sensors ref
   animateIO FullScreen black (\_ -> picture <$> readMVar ref) (control ref)
-
--- t <- getTime Monotonic
--- let v = [Var (pi / 2 :: R) 0 0, Var ((pi / 2 :: R) + 0.1) 0 0]
--- model v t
 
 initialState :: [Var]
 initialState =
   [ Var (pi / 2) 0 0,
     Var ((pi / 2) + 0.1) 0 0
   ]
-
--- updateState :: [Var] -> TimeSpec -> [Var]
--- updateState v t =
---   [ Var (x (head v) + realToFrac t / 1000000000) 0 0,
---     Var (x (last v) - 2 * realToFrac t / 1000000000) 0 0
---   ]
 
 controlCycle :: MVar [Var] -> Controller -> TimeSpec -> IO ()
 controlCycle ref c t0 = do
