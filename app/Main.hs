@@ -17,7 +17,7 @@ import Numeric.LinearAlgebra.Data
 import System.Clock
 import Text.Printf
 
-accDiff :: Var -> Vector R
+accDiff :: Rod -> Vector R
 accDiff r =
   let cx = cos $ x r
       cy = sin $ x r
@@ -34,7 +34,7 @@ rotMat a =
       s = sin a
    in fromLists [[c, -s], [s, c]] :: Matrix R
 
-sensors :: MVar [Var] -> IO b
+sensors :: MVar [Rod] -> IO b
 sensors v = do
   ref <- readMVar v
   let g = vector [0, -9.8]
@@ -48,15 +48,15 @@ sensors v = do
   threadDelay 5000000
   sensors v
 
-data Var = Var {x :: Double, x' :: Double, x'' :: Double}
+data Rod = Rod {x :: Double, x' :: Double, x'' :: Double}
 
-newVar :: Var -> TimeSpec -> Var
+newVar :: Rod -> TimeSpec -> Rod
 newVar v t =
   let dt = realToFrac t / 1000000000
    in v {x = x v + (x' v + 0.5 * x'' v * dt) * dt, x' = x' v + x'' v * dt}
 
-instance Show Var where
-  show :: Var -> String
+instance Show Rod where
+  show :: Rod -> String
   show v = printf "%.7f,%.7f,%.7f" (x v) (x' v) (x'' v)
 
 l1 :: R
@@ -95,7 +95,7 @@ _Q2 = 0
 cpMatrix :: Vector R -> Matrix R
 cpMatrix v = fromLists [[0, -(v ! 2), v ! 1], [v ! 2, 0, -(v ! 0)], [-(v ! 1), v ! 0, 0]] :: Matrix R
 
-updateVars :: [Var] -> TimeSpec -> [Var]
+updateVars :: [Rod] -> TimeSpec -> [Rod]
 updateVars v t =
   let v_new = [newVar a t | a <- v]
       r2 = scalar l1 * vector [cos $ x $ head v_new, sin $ x $ head v_new, 0]
@@ -137,7 +137,7 @@ updateVars v t =
                 ],
               fromBlocks
                 [ [konst 0 (3, 6), 0, 0],
-                  [0, ident 3, ident 3]
+                  [0, ident 3, konst 0 (3, 3)]
                 ]
             ],
             [ 0,
@@ -156,7 +156,7 @@ updateVars v t =
             -(w1 `cross` (i1 #> w1)),
             -(w2 `cross` (i2 #> w2)),
             konst 0 3,
-            konst 0 3,
+            vector [0, 0, 1],
             0
           ]
       b = head $ toColumns $ fromMaybe (error "wrong matrix") (linearSolve m $ fromColumns [a])
@@ -171,18 +171,18 @@ main = do
   -- print $ accDiff $ Var 489.8538573938557 315.9010928869936 (-394.2820661499558)
   -- a <- newMVar [Var 464.0897101 286.7705198 383.9401173, Var 64.1445146 17.1352783 153.2820900]
   -- sensors a -- [41126.130616413975,-198.31925023022438],[-46876.664903601355,-67505.96081714175]
-  ref <- newMVar initialState
+  refRods <- newMVar initialState
   _ <- forkIO $ do
-    sensors ref
-  animateIO FullScreen black (\_ -> picture <$> readMVar ref) (control ref)
+    sensors refRods
+  animateIO FullScreen black (\_ -> picture <$> readMVar refRods) (control refRods)
 
-initialState :: [Var]
+initialState :: [Rod]
 initialState =
-  [ Var (pi / 2) 0 0,
-    Var ((pi / 2) + 0.1) 0 0
+  [ Rod (pi / 2) 0 0,
+    Rod ((pi / 2) + 0.1) 0 0
   ]
 
-controlCycle :: MVar [Var] -> Controller -> TimeSpec -> IO ()
+controlCycle :: MVar [Rod] -> Controller -> TimeSpec -> IO ()
 controlCycle ref c t0 = do
   x <- takeMVar ref
   t <- getTime Monotonic
@@ -193,12 +193,12 @@ controlCycle ref c t0 = do
   threadDelay 1
   controlCycle ref c t
 
-control :: MVar [Var] -> Controller -> IO ()
+control :: MVar [Rod] -> Controller -> IO ()
 control ref c = do
   t <- getTime Monotonic
   void . forkIO $ controlCycle ref c t
 
-picture :: [Var] -> Picture
+picture :: [Rod] -> Picture
 picture v = do
   let [a1, a2] = fmap (realToFrac . x) v
   Scale 100 100 $
