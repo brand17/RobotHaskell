@@ -2,3 +2,5 @@ dist-newstyle/*
 *.xls*
 .vscode/phoityne.log
 .vscode/dist-cabal-repl*
+*.docx
+~*.docx

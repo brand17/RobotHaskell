@@ -34,10 +34,11 @@ rotMat a =
       s = sin a
    in fromLists [[c, -s], [s, c]] :: Matrix R
 
-sensors :: MVar [Rod] -> MVar Double -> IO b
-sensors r e = do
-  rod <- readMVar r
-  eng <- readMVar e
+type Sensors = [Vector R]
+
+sensors :: MVar [Rod] -> MVar Sensors -> IO b
+sensors refRod refSensors = do
+  rod <- readMVar refRod
   let g = vector [0, -9.8]
       acc1 = scalar l1 * accDiff (head rod)
       acc2 = acc1 + scalar l2 * accDiff (last rod)
@@ -47,7 +48,7 @@ sensors r e = do
       accLoc2 = rotMat (-(x $ last rod)) #> accCM2
   print (accLoc1, accLoc2)
   threadDelay 5000000
-  sensors r e
+  sensors refRod refSensors
 
 data Rod = Rod {x :: Double, x' :: Double, x'' :: Double}
 
@@ -96,8 +97,8 @@ _Q2 = 0
 cpMatrix :: Vector R -> Matrix R
 cpMatrix v = fromLists [[0, -(v ! 2), v ! 1], [v ! 2, 0, -(v ! 0)], [-(v ! 1), v ! 0, 0]] :: Matrix R
 
-updateVars :: [Rod] -> Double -> TimeSpec -> [Rod]
-updateVars rods e t =
+updateRods :: [Rod] -> Double -> TimeSpec -> [Rod]
+updateRods rods duty t =
   let v_new = [newVar a t | a <- rods]
       r2 = scalar l1 * vector [cos $ x $ head v_new, sin $ x $ head v_new, 0]
       c1 = r2 / 2
@@ -157,7 +158,7 @@ updateVars rods e t =
             -(w1 `cross` (i1 #> w1)),
             -(w2 `cross` (i2 #> w2)),
             konst 0 3,
-            vector [0, 0, e],
+            vector [0, 0, duty],
             0
           ]
       b = head $ toColumns $ fromMaybe (error "wrong matrix") (linearSolve m $ fromColumns [a])
@@ -173,10 +174,10 @@ main = do
   -- a <- newMVar [Var 464.0897101 286.7705198 383.9401173, Var 64.1445146 17.1352783 153.2820900]
   -- sensors a -- [41126.130616413975,-198.31925023022438],[-46876.664903601355,-67505.96081714175]
   refRods <- newMVar initialState
-  refEngine <- newMVar (0 :: Double)
+  refSensors <- newMVar [konst 0 2, konst 0 2]
   _ <- forkIO $ do
-    sensors refRods refEngine
-  animateIO FullScreen black (\_ -> picture <$> readMVar refRods) (control refRods refEngine)
+    sensors refRods refSensors
+  animateIO FullScreen black (\_ -> picture <$> readMVar refRods) (control refRods refSensors)
 
 initialState :: [Rod]
 initialState =
@@ -184,22 +185,22 @@ initialState =
     Rod ((pi / 2) + 0.1) 0 0
   ]
 
-controlCycle :: MVar [Rod] -> MVar Double -> Controller -> TimeSpec -> IO ()
-controlCycle r e c t0 = do
-  x <- takeMVar r
+controlCycle :: MVar [Rod] -> MVar Sensors -> Double -> Controller -> TimeSpec -> IO ()
+controlCycle refRods refSensors duty c t0 = do
+  rods <- takeMVar refRods
   t <- getTime Monotonic
-  eng <- readMVar e
-  x' <- evaluate (updateVars x eng (t - t0))
+  s <- readMVar refSensors
+  updatedRods <- evaluate (updateRods rods duty (t - t0))
   -- putStrLn "state updated"
-  putMVar r x'
+  putMVar refRods updatedRods
   controllerSetRedraw c
   threadDelay 1
-  controlCycle r e c t
+  controlCycle refRods refSensors duty c t
 
-control :: MVar [Rod] -> MVar Double -> Controller -> IO ()
+control :: MVar [Rod] -> MVar Sensors -> Controller -> IO ()
 control r e c = do
   t <- getTime Monotonic
-  void . forkIO $ controlCycle r e c t
+  void . forkIO $ controlCycle r e 0 c t
 
 picture :: [Rod] -> Picture
 picture r = do
