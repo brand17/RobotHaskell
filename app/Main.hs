@@ -36,8 +36,8 @@ rotMat a =
 
 type Sensors = [Vector R]
 
-sensors :: MVar [Rod] -> MVar Sensors -> IO b
-sensors refRod refSensors = do
+sensors :: MVar [Rod] -> MVar Double -> IO b
+sensors refRod refDuty = do
   rod <- readMVar refRod
   let g = vector [0, -9.8]
       acc1 = scalar l1 * accDiff (head rod)
@@ -48,7 +48,7 @@ sensors refRod refSensors = do
       accLoc2 = rotMat (-(x $ last rod)) #> accCM2
   print (accLoc1, accLoc2)
   threadDelay 5000000
-  sensors refRod refSensors
+  sensors refRod refDuty
 
 data Rod = Rod {x :: Double, x' :: Double, x'' :: Double}
 
@@ -174,10 +174,10 @@ main = do
   -- a <- newMVar [Var 464.0897101 286.7705198 383.9401173, Var 64.1445146 17.1352783 153.2820900]
   -- sensors a -- [41126.130616413975,-198.31925023022438],[-46876.664903601355,-67505.96081714175]
   refRods <- newMVar initialState
-  refSensors <- newMVar [konst 0 2, konst 0 2]
+  refDuty <- newMVar 0
   _ <- forkIO $ do
-    sensors refRods refSensors
-  animateIO FullScreen black (\_ -> picture <$> readMVar refRods) (control refRods refSensors)
+    animateIO FullScreen black (\_ -> picture <$> readMVar refRods) (control refRods refDuty)
+  sensors refRods refDuty
 
 initialState :: [Rod]
 initialState =
@@ -185,22 +185,22 @@ initialState =
     Rod ((pi / 2) + 0.1) 0 0
   ]
 
-controlCycle :: MVar [Rod] -> MVar Sensors -> Double -> Controller -> TimeSpec -> IO ()
-controlCycle refRods refSensors duty c t0 = do
+controlCycle :: MVar [Rod] -> MVar Double -> Controller -> TimeSpec -> IO ()
+controlCycle refRods refDuty c t0 = do
   rods <- takeMVar refRods
   t <- getTime Monotonic
-  s <- readMVar refSensors
+  duty <- readMVar refDuty
   updatedRods <- evaluate (updateRods rods duty (t - t0))
   -- putStrLn "state updated"
   putMVar refRods updatedRods
   controllerSetRedraw c
   threadDelay 1
-  controlCycle refRods refSensors duty c t
+  controlCycle refRods refDuty c t
 
-control :: MVar [Rod] -> MVar Sensors -> Controller -> IO ()
-control r e c = do
+control :: MVar [Rod] -> MVar Double -> Controller -> IO ()
+control refRods refDuty c = do
   t <- getTime Monotonic
-  void . forkIO $ controlCycle r e 0 c t
+  void . forkIO $ controlCycle refRods refDuty c t
 
 picture :: [Rod] -> Picture
 picture r = do
