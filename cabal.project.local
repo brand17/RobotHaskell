@@ -1,0 +1,4 @@
+ignore-project: False
+profiling: True
+package *
+    profiling-detail: auto-calls

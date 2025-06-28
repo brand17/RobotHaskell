@@ -8,12 +8,13 @@ import Control.Concurrent
 -- import NiceFork
 
 import Control.Exception (evaluate)
+-- import Control.Exception.Backtrace
 import Control.Monad
 import Data.Maybe (fromMaybe)
 import Debug.Trace (traceShowId)
+import GHC.Stack (HasCallStack)
 import Graphics.Gloss.Interface.IO.Animate hiding (Vector)
-import Numeric.LinearAlgebra (cross, linearSolve, (#>))
-import Numeric.LinearAlgebra.Data
+import Numeric.LinearAlgebra
 import System.Clock
 import Text.Printf
 
@@ -36,9 +37,8 @@ rotMat a =
 
 type Sensors = [Vector R]
 
-sensors :: MVar [Rod] -> MVar Double -> IO b
-sensors refRod refDuty = do
-  rod <- readMVar refRod
+readAccelerometers :: [Rod] -> (Vector R, Vector R)
+readAccelerometers rod =
   let g = vector [0, -9.8]
       acc1 = scalar l1 * accDiff (head rod)
       acc2 = acc1 + scalar l2 * accDiff (last rod)
@@ -46,9 +46,84 @@ sensors refRod refDuty = do
       accCM2 = g - scalar 0.5 * (acc1 + acc2)
       accLoc1 = rotMat (-(x $ head rod)) #> accCM1
       accLoc2 = rotMat (-(x $ last rod)) #> accCM2
-  print (accLoc1, accLoc2)
-  threadDelay 5000000
-  sensors refRod refDuty
+   in (accLoc1, accLoc2)
+
+sensors :: MVar [Rod] -> MVar Double -> Double -> Matrix R -> IO b
+sensors refRod refDuty duty observations = do
+  rod <- readMVar refRod
+  let (accLoc1, accLoc2) = readAccelerometers rod
+  -- print (accLoc1, accLoc2)
+  _ <- takeMVar refDuty
+  putMVar refDuty duty
+  let gLoc = vector [-9.8, 0]
+      obs = vjoin [scalar duty, accLoc1 - gLoc, accLoc2 - gLoc]
+  -- print observations
+  -- print obs
+  -- print duty
+  -- print ("duty", duty)
+  let duty' = newDuty observations obs duty
+  -- print ("duty'", duty')
+  let o = fromRows [obs]
+      o' = if rows observations == 0 then o else observations === o
+      newObservations = basisCols o' $ basisRowsMask o'
+  -- print (obs, newObservations)
+  threadDelay 500000
+  sensors refRod refDuty duty' newObservations
+
+newDuty :: Matrix R -> Vector R -> R -> R
+newDuty observations obs duty =
+  let nextObs =
+        (if rows observations == 0 then asRow obs else observations === asRow obs)
+          ?? (Drop 1, Drop 1)
+      matSize = size obs
+      ratios =
+        if rows nextObs == 0
+          then (0 >< 0) [] :: Matrix R
+          else
+            let o' =
+                  if rows observations == matSize
+                    then observations
+                    else
+                      let o = fromRows [obs]
+                          o'' = tr' $ if rows observations == 0 then o else observations === o
+                       in tr' (basisCols o'' $ basisRowsMask o'') ?? (Drop 1, Drop 1)
+             in fromMaybe (error "wrong observations") $
+                  linearSolve o' nextObs
+   in if rows ratios > 0
+        then
+          let a = head $ toRows ratios
+              b =
+                head $
+                  toRows $
+                    tr' $
+                      ratios ?? (Drop 1, All)
+                        * asColumn (subVector 1 (matSize - 1) obs)
+           in -(dot a b / dot a a)
+        else duty
+
+basisCols :: (Element t, Eq a, Num a) => Matrix t -> [a] -> Matrix t
+basisCols m mask =
+  let inds = [i | (v, i) <- zip mask [0 ..], v /= 0]
+   in m ?? (Pos (idxs inds), All)
+
+basisRowsMask :: Matrix R -> [R]
+basisRowsMask m
+  | rows m == 0 = []
+  | cols m == 1 =
+      if abs m ! 0 ! 0 < 0.001
+        then
+          0 : basisRowsMask (dropRows 1 m)
+        else [m ! 0 ! 0]
+  | otherwise =
+      let c1 = head (toRows m)
+          i = maxIndex $ abs c1
+          (m'', v) =
+            if abs m ! 0 ! i > 0.001
+              then
+                let (r0, m') = (m ¿ [i], m ?? (All, Take i) ||| (m ?? (All, Drop $ i + 1)))
+                 in (scalar (r0 ! 0 ! 0) * m' - r0 * takeRows 1 m', r0 ! 0 ! 0)
+              else (dropRows 1 m, 0)
+       in v : basisRowsMask (dropRows 1 m'')
 
 data Rod = Rod {x :: Double, x' :: Double, x'' :: Double}
 
@@ -166,18 +241,69 @@ updateRods rods duty t =
       alpha2 = b `atIndex` 12 + alpha1
    in [v {x'' = a} | (v, a) <- zip v_new [alpha1, alpha2]]
 
-main :: IO ()
+main :: (HasCallStack) => IO ()
 main = do
+  -- setBacktraceMechanismState CostCentreBacktrace True
   -- let m = traceShowId $ head (toColumns $ matrix 1 [1 .. 15])
   -- print m
   -- print $ accDiff $ Var 489.8538573938557 315.9010928869936 (-394.2820661499558)
   -- a <- newMVar [Var 464.0897101 286.7705198 383.9401173, Var 64.1445146 17.1352783 153.2820900]
   -- sensors a -- [41126.130616413975,-198.31925023022438],[-46876.664903601355,-67505.96081714175]
+  -- let observations =
+  --       (2 >< 5)
+  --         [ 0.0,
+  --           0.0,
+  --           -6.000571133729649e-16,
+  --           4.89591802753484e-2,
+  --           0.9783674831389163,
+  --           0.0,
+  --           7.632757290946039,
+  --           -10.756081127611077,
+  --           11.58863227766335,
+  --           -5.9274815228834035
+  --         ] ::
+  --         Matrix R
+  -- let obs = 5 |> [0.0, 6.968941764911328, -8.18639664049938, 12.155130063167785, -7.426331449571719]
+  -- let a = newDuty observations obs 0
+  -- let o' =
+  --       (3 >< 3)
+  --         [ 0.0,
+  --           -6.000571133729649e-16,
+  --           4.89591802753484e-2,
+  --           7.632757290946039,
+  --           -10.756081127611077,
+  --           11.58863227766335,
+  --           6.968941764911328,
+  --           -8.18639664049938,
+  --           12.155130063167785
+  --         ] ::
+  --         Matrix R
+  -- let nextObs =
+  --       (3 >< 5)
+  --         [ 0.0,
+  --           0.0,
+  --           -6.000571133729649e-16,
+  --           4.89591802753484e-2,
+  --           0.9783674831389163,
+  --           0.0,
+  --           7.632757290946039,
+  --           -10.756081127611077,
+  --           11.58863227766335,
+  --           -5.9274815228834035,
+  --           0.0,
+  --           6.968941764911328,
+  --           -8.18639664049938,
+  --           12.155130063167785,
+  --           -7.426331449571719
+  --         ]
+  -- let a = linearSolve o' nextObs
+  -- print a
+  -- getLine
   refRods <- newMVar initialState
   refDuty <- newMVar 0
   _ <- forkIO $ do
     animateIO FullScreen black (\_ -> picture <$> readMVar refRods) (control refRods refDuty)
-  sensors refRods refDuty
+  sensors refRods refDuty 0 $ fromLists []
 
 initialState :: [Rod]
 initialState =
@@ -187,9 +313,9 @@ initialState =
 
 controlCycle :: MVar [Rod] -> MVar Double -> Controller -> TimeSpec -> IO ()
 controlCycle refRods refDuty c t0 = do
-  rods <- takeMVar refRods
   t <- getTime Monotonic
   duty <- readMVar refDuty
+  rods <- takeMVar refRods
   updatedRods <- evaluate (updateRods rods duty (t - t0))
   -- putStrLn "state updated"
   putMVar refRods updatedRods
