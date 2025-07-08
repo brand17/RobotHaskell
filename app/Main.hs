@@ -73,6 +73,28 @@ sensors refRod refDuty duty observations = do
   threadDelay 500000
   sensors refRod refDuty duty' o''
 
+basisRowsInds :: Matrix R -> ([Int], [Int]) -> ([Int], [Int])
+-- basisRowsInds m (c, c') | trace ("basisRowsInds " ++ show m ++ " " ++ show (c, c')) False = undefined
+basisRowsInds m (c, c')
+  | rows m == 0 || cols m == 0 = (c, c')
+  | otherwise =
+      let csm = m ?? (All, Pos $ sortIndex (scalar (-1) * abs (head $ toRows m)))
+       in if abs csm ! 0 ! 0 < 0.001
+            then basisRowsInds (dropRows 1 csm) (c, tail c')
+            else
+              if rows csm == 1
+                then (c, c')
+                else
+                  let m'' =
+                        let (r0, m') = (takeRows 1 csm, (dropRows 1 csm))
+                         in scalar (r0 ! 0 ! 0) * m' - r0 * takeColumns 1 m'
+                   in basisRowsInds (dropColumns 1 m'') (c ++ [head c'], tail c')
+
+basisRows :: Matrix R -> Matrix R
+basisRows m =
+  let i = fst $ basisRowsInds m ([], [0 .. 5])
+   in m ?? (Pos (idxs i), All)
+
 newDuty :: Matrix R -> Vector R -> R -> R
 -- newDuty observations obs duty | trace ("newDuty " ++ show observations ++ " " ++ show obs ++ " " ++ show duty) False = undefined
 newDuty observations obs duty =
