@@ -26,6 +26,7 @@ sensors :: MVar [Rod] -> MVar Double -> Double -> Matrix R -> IO b
 sensors refRod refDuty duty observations = do
   rod <- readMVar refRod
   let readAccelerometers :: [Rod] -> (Vector R, Vector R)
+      -- readAccelerometers rod | trace ("readAccelerometers " ++ show rod) False = undefined
       readAccelerometers rod =
         let g = vector [0, -9.8]
             accDiff :: Rod -> Vector R
@@ -66,33 +67,35 @@ sensors refRod refDuty duty observations = do
   let duty' = newDuty observations obs duty
   -- print ("duty'", duty')
   let o = fromRows [obs]
-      o' = if rows observations == 0 then o else observations === o
-      o'' = if rows o' < 6 then o' else takeLastRows 5 o'
+      o' = if rows observations == 0 then o else basisRows $ observations === o
+  -- o'' = if rows o' < 6 then o' else takeLastRows 5 o'
   -- newObservations = basisCols o'
   -- print (obs, newObservations)
-  threadDelay 500000
-  sensors refRod refDuty duty' o''
+  threadDelay 5000
+  -- print duty'
+  sensors refRod refDuty duty' o'
 
 basisRowsInds :: Matrix R -> ([Int], [Int]) -> ([Int], [Int])
 -- basisRowsInds m (c, c') | trace ("basisRowsInds " ++ show m ++ " " ++ show (c, c')) False = undefined
 basisRowsInds m (c, c')
   | rows m == 0 || cols m == 0 = (c, c')
   | otherwise =
-      let csm = m ?? (All, Pos $ sortIndex (scalar (-1) * abs (head $ toRows m)))
-       in if abs csm ! 0 ! 0 < 0.001
-            then basisRowsInds (dropRows 1 csm) (c, tail c')
+      let lastRow = rows m - 1
+          csm = m ?? (All, Pos $ sortIndex (negate $ abs (m ! lastRow)))
+       in if abs (csm ! lastRow ! 0) < 0.001
+            then basisRowsInds (takeRows lastRow csm) (c, init c')
             else
               if rows csm == 1
-                then (c, c')
+                then (last c' : c, init c')
                 else
                   let m'' =
-                        let (r0, m') = (takeRows 1 csm, (dropRows 1 csm))
-                         in scalar (r0 ! 0 ! 0) * m' - r0 * takeColumns 1 m'
-                   in basisRowsInds (dropColumns 1 m'') (c ++ [head c'], tail c')
+                        let (r, m') = (dropRows lastRow csm, (takeRows lastRow csm))
+                         in scalar (r ! 0 ! 0) * m' - r * takeColumns 1 m'
+                   in basisRowsInds (dropColumns 1 m'') (last c' : c, init c')
 
 basisRows :: Matrix R -> Matrix R
 basisRows m =
-  let i = fst $ basisRowsInds m ([], [0 .. 5])
+  let i = fst $ basisRowsInds m ([], [0 .. rows m - 1])
    in m ?? (Pos (idxs i), All)
 
 newDuty :: Matrix R -> Vector R -> R -> R
@@ -130,12 +133,12 @@ basisColsInds :: Matrix R -> ([Int], [Int]) -> ([Int], [Int])
 basisColsInds m (c, c')
   | rows m == 0 || cols m == 0 = (c, c')
   | otherwise =
-      let rsm = m ?? (Pos $ sortIndex (scalar (-1) * abs (head $ toColumns m)), All)
+      let rsm = m ?? (Pos $ sortIndex (negate $ abs (head $ toColumns m)), All)
        in if abs rsm ! 0 ! 0 < 0.001
             then basisColsInds (dropColumns 1 rsm) (c, tail c')
             else
               if cols rsm == 1
-                then (c, c')
+                then (c ++ [head c'], tail c')
                 else
                   let m'' =
                         let (c0, m') = (takeColumns 1 rsm, (dropColumns 1 rsm))
@@ -261,6 +264,8 @@ main = do
   --     obs = vector [-1.226476661216117, 49.35569019353245, 0.6330242214091544, -31.078145446208485, -46.393167375108305]
   --     d = newDuty observations obs (-1.226476661216117)
   -- print d
+  -- let a = fromLists [[1, 0], [0, 1]]
+  -- print $ basisRows a
   -- exitSuccess
   refRods <- newMVar initialState
   refDuty <- newMVar 1
