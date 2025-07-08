@@ -100,7 +100,7 @@ newDuty observations obs duty =
               r' = dropRows 1 ratios
               o' = fromRows [obs] ¿ tail inds
               b = (o' <> r') ! 0
-           in -(dot a b / dot a a)
+           in max (-1000) (min 1000 (-(dot a b / dot a a)))
         else duty
 
 basisColsInds :: Matrix R -> ([Int], [Int]) -> ([Int], [Int])
@@ -270,6 +270,7 @@ control refRods refDuty c = do
   void . forkIO $ controlCycle refRods refDuty c t
 
 picture :: [Rod] -> Picture
+-- picture r | trace ("picture " ++ show r) False = undefined
 picture r = do
   let [a1, a2] = fmap (realToFrac . x) r
   Scale 100 100 $
