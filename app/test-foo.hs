@@ -1,11 +1,17 @@
 module Test where
-import System.Exit (exitFailure)
-import Numeric.LinearAlgebra
+
 import Main
-import Test.QuickCheck (quickCheck )
+import Numeric.LinearAlgebra
+import System.Exit (exitFailure, exitSuccess)
+import Test.QuickCheck (quickCheck)
 
 main = do
-    let o' = matrix 3 [1 .. 15]
-    print $ basisRowsMask o'
-    putStrLn "This test always fails!"
-    exitFailure
+  -- quickCheck ((basisColsMask $ fromLists [[2, 0], [3, 0], [0, 4]]) == [2, 0, 8])
+  -- quickCheck (basisColsInds (fromLists [[1, 0, 0], [0, 1, 0]]) ([], [0 .. 2]) == ([0, 1], [2]))
+  -- quickCheck (basisColsInds (fromLists [[1, 1, 0], [0, 0, 1]]) ([], [0 .. 2]) == ([0, 2], [1]))
+  -- quickCheck (basisColsInds (fromLists [[1, 1, 1], [0, 0, 0]]) ([], [0 .. 2]) == ([0], [1, 2]))
+  -- quickCheck (basisColsInds (fromLists [[0, 0, 0], [0, 0, 0]]) ([], [0 .. 2]) == ([], [0, 1, 2]))
+  -- quickCheck (basisColsInds (fromLists [[0, 1, 0], [0, 0, 0]]) ([], [0 .. 2]) == ([1], [0, 2]))
+  -- quickCheck (basisColsInds (fromLists [[1, 2, 3], [2, 4, 6]]) ([], [0 .. 2]) == ([2], [0, 1]))
+
+  exitSuccess
