@@ -67,7 +67,7 @@ sensors refRod refDuty duty observations = do
   -- print ("duty'", duty')
   let o = fromRows [obs]
       o' = if rows observations == 0 then o else observations === o
-      o'' = if rows observations < 6 then o' else takeLastRows 5 o'
+      o'' = if rows o' < 6 then o' else takeLastRows 5 o'
   -- newObservations = basisCols o'
   -- print (obs, newObservations)
   threadDelay 500000
@@ -104,6 +104,7 @@ newDuty observations obs duty =
         else duty
 
 basisColsInds :: Matrix R -> ([Int], [Int]) -> ([Int], [Int])
+-- basisColsInds m (c, c') | trace ("basisColsInds " ++ show m ++ " " ++ show (c, c')) False = undefined
 basisColsInds m (c, c')
   | rows m == 0 || cols m == 0 = (c, c')
   | otherwise =
@@ -111,10 +112,13 @@ basisColsInds m (c, c')
        in if abs rsm ! 0 ! 0 < 0.001
             then basisColsInds (dropColumns 1 rsm) (c, tail c')
             else
-              let m'' =
-                    let (c0, m') = (takeColumns 1 rsm, (dropColumns 1 rsm))
-                     in scalar (c0 ! 0 ! 0) * m' - c0 * takeRows 1 m'
-               in basisColsInds (dropRows 1 m'') (c ++ [head c'], tail c')
+              if cols rsm == 1
+                then (c, c')
+                else
+                  let m'' =
+                        let (c0, m') = (takeColumns 1 rsm, (dropColumns 1 rsm))
+                         in scalar (c0 ! 0 ! 0) * m' - c0 * takeRows 1 m'
+                   in basisColsInds (dropRows 1 m'') (c ++ [head c'], tail c')
 
 basisCols :: Matrix R -> Matrix R
 basisCols m =
