@@ -22,6 +22,8 @@ import System.Exit
 import Text.Printf
 import Prelude hiding ((<>))
 
+engineOn = True
+
 sensors :: MVar [Rod] -> MVar Double -> Double -> Matrix R -> IO b
 sensors refRod refDuty duty observations = do
   rod <- readMVar refRod
@@ -72,7 +74,8 @@ sensors refRod refDuty duty observations = do
   -- newObservations = basisCols o'
   -- print (obs, newObservations)
   threadDelay 5000
-  -- print duty'
+  -- t <- getTime Monotonic
+  -- print t
   sensors refRod refDuty duty' o'
 
 basisRowsInds :: Matrix R -> ([Int], [Int]) -> ([Int], [Int])
@@ -82,7 +85,7 @@ basisRowsInds m (c, c')
   | otherwise =
       let lastRow = rows m - 1
           csm = m ?? (All, Pos $ sortIndex (negate $ abs (m ! lastRow)))
-       in if abs (csm ! lastRow ! 0) < 0.001
+       in if abs (csm ! lastRow ! 0) == 0
             then basisRowsInds (takeRows lastRow csm) (c, init c')
             else
               if rows csm == 1
@@ -125,7 +128,7 @@ newDuty observations obs duty =
               r' = dropRows 1 ratios
               o' = fromRows [obs] ¿ tail inds
               b = (o' <> r') ! 0
-           in max (-1000) (min 1000 (-(dot a b / dot a a)))
+           in boundAbs (-(dot a b / dot a a)) 100
         else duty
 
 basisColsInds :: Matrix R -> ([Int], [Int]) -> ([Int], [Int])
@@ -134,7 +137,7 @@ basisColsInds m (c, c')
   | rows m == 0 || cols m == 0 = (c, c')
   | otherwise =
       let rsm = m ?? (Pos $ sortIndex (negate $ abs (head $ toColumns m)), All)
-       in if abs rsm ! 0 ! 0 < 0.001
+       in if abs rsm ! 0 ! 0 == 0
             then basisColsInds (dropColumns 1 rsm) (c, tail c')
             else
               if cols rsm == 1
@@ -162,6 +165,10 @@ l1 = 1
 l2 :: R
 l2 = 2 * sqrt 2
 
+bound x mn mx = max mn (min mx x)
+
+boundAbs x b = bound x (-b) b
+
 updateRods :: [Rod] -> Double -> TimeSpec -> [Rod]
 updateRods rods duty t =
   let newVar :: Rod -> TimeSpec -> Rod
@@ -169,7 +176,50 @@ updateRods rods duty t =
         let dt = realToFrac t / 1000000000
          in v {x = x v + (x' v + 0.5 * x'' v * dt) * dt, x' = x' v + x'' v * dt}
 
-      v_new = [newVar a t | a <- rods]
+      newVars :: [Rod] -> TimeSpec -> [Rod]
+      newVars r t =
+        let dt = realToFrac t / 1000000000
+            potentEnergy :: [Rod] -> Double
+            potentEnergy r = 9.8 * (m1 * (l1 * sin (x (head r)) + l1) + m2 * (l2 * sin (x (last r)) + l2))
+            kinetEnergy :: [Rod] -> Double
+            kinetEnergy rods =
+              let x0 = x (head rods)
+                  x1 = x (last rods)
+                  cm2 =
+                    scalar l1 * vector [cos x0, sin x0]
+                      + scalar l2 / 2 * vector [cos x1, sin x1]
+                  v1 = vector [-cm2 ! 1, cm2 ! 0] * 2 * pi * scalar (x' (head rods))
+                  v2 = scalar (pi * l2 * x' (last rods)) * vector [-sin x1, cos x1]
+                  vcm = v1 + v2
+                  keRodCenter :: R -> R -> R -> R
+                  keRodCenter m l w = 1 / 24 * m * l * l * w * w
+                  keRodEnd :: R -> R -> R -> R
+                  keRodEnd m l w = 1 / 6 * m * l * l * w * w
+               in keRodEnd m1 l1 (x' (head rods))
+                    + m2 * 0.5 * dot vcm vcm
+                    + keRodCenter m2 l2 (x' (last rods))
+            r' =
+              [ v {x = x v + (x' v + 0.5 * x'' v * dt) * dt, x' = x' v + x'' v * dt}
+              | v <- r
+              ]
+            pe = potentEnergy r
+            ke = kinetEnergy r
+            pe' = potentEnergy r'
+            ke' = kinetEnergy r'
+            k =
+              -- trace (show pe ++ " " ++ show ke ++ " " ++ show pe' ++ " " ++ show ke') $
+              if ke' == 0
+                then 1
+                else
+                  (pe + ke - pe') / ke'
+            r'' =
+              [ v' {x' = x' v' * (k ** 0.5)}
+              | v' <- r'
+              ]
+         in r''
+
+      -- v_new = [newVar a t | a <- rods]
+      v_new = newVars rods t
       cpMatrix v = fromLists [[0, -(v ! 2), v ! 1], [v ! 2, 0, -(v ! 0)], [-(v ! 1), v ! 0, 0]] :: Matrix R
       z2 :: Vector R
       z2 = vector [0, 0, 1]
@@ -250,7 +300,7 @@ updateRods rods duty t =
             -(w1 `cross` (i1 #> w1)),
             -(w2 `cross` (i2 #> w2)),
             konst 0 3,
-            vector [0, 0, duty],
+            vector [0, 0, if engineOn then duty else 0],
             0
           ]
       b = head $ toColumns $ fromMaybe (error "wrong matrix") (linearSolve m $ fromColumns [a])
@@ -261,11 +311,9 @@ updateRods rods duty t =
 main :: (HasCallStack) => IO ()
 main = do
   setBacktraceMechanismState CostCentreBacktrace True
-  --     obs = vector [-1.226476661216117, 49.35569019353245, 0.6330242214091544, -31.078145446208485, -46.393167375108305]
-  --     d = newDuty observations obs (-1.226476661216117)
+  --     obs = vector [-0.6554664844616452, 5.871868922584511e-3, 4.158951088345384, 1.4737820668779023, -4.3550224506076605e-4]
+  --     d = newDuty m obs (-0.6554664844616452)
   -- print d
-  -- let a = fromLists [[1, 0], [0, 1]]
-  -- print $ basisRows a
   -- exitSuccess
   refRods <- newMVar initialState
   refDuty <- newMVar 1
